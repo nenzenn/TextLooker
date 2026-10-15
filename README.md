@@ -1,8 +1,10 @@
-# TextLooker
+# TextLooker 👀
 
 A tiny, single-file texthooker page. It connects to Textractor's WebSocket extension and shows the hooked text as plain, selectable lines so pop-up dictionaries like [Yomitan](https://github.com/yomidevs/yomitan) can scan it.
 
-No build step, no dependencies, no server of its own: just one `textlooker.html` file.
+No build step, no dependencies, no server of its own: just one `index.html` file.
+
+**Live version:** `https://YOUR-USERNAME.github.io/REPO-NAME/`
 
 ## Features
 
@@ -26,22 +28,29 @@ No build step, no dependencies, no server of its own: just one `textlooker.html`
 ## Usage
 
 1. In Textractor, add the WebSocket extension (right-click the main window, then Extensions) and select the hook that shows the game text.
-2. Open `textlooker.html` in your browser. See the note below about local files.
+2. Open TextLooker using one of the options in [Opening the page](#opening-the-page).
 3. The status dot turns green when connected. New text from the game appears as new lines.
 4. Hover over the text with Yomitan to look words up.
 
 ### Opening the page
 
-Serving the page over HTTP is the most reliable option:
+There are three ways to open it.
+
+**Option 1: Hosted copy (GitHub Pages).**
+Open the live version linked at the top. Yomitan works on `https://` pages without any extra permission, and the page connects to your own machine, so use `ws://127.0.0.1:6677` in the URL field. Chrome and Firefox allow an HTTPS page to open a `ws://` connection to `127.0.0.1`, but Safari may block it, and newer versions of Chrome may ask you to allow access to local network devices the first time. If it doesn't connect, use Option 2 or 3.
+
+**Option 2: Local web server.**
+Download `index.html`, then serve its folder over HTTP:
 
 ```
 cd /path/to/textlooker
 python -m http.server 8000
 ```
 
-Then open `http://127.0.0.1:8000/textlooker.html`.
+Then open `http://127.0.0.1:8000/`.
 
-You can also open the file directly (`file://`). In Chrome and other Chromium-based browsers, Yomitan won't run on local files by default. To allow it:
+**Option 3: Open the file directly (`file://`).**
+In Chrome and other Chromium-based browsers, Yomitan won't run on local files by default. To allow it:
 
 1. Open the browser's extension menu (`chrome://extensions`, or `edge://extensions` in Edge).
 2. Find Yomitan and click **Details**.
@@ -50,8 +59,6 @@ You can also open the file directly (`file://`). In Chrome and other Chromium-ba
 
 This permission is set per extension, so you only have to do it once.
 
-Avoid hosting the page on an `https://` site, because browsers may block an HTTPS page from opening an unencrypted `ws://` connection.
-
 ## Configuration
 
 Use the URL field at the top of the page. Enter a full address such as `ws://127.0.0.1:6677`. If you leave off the `ws://`, it is added for you. Press Enter or click **Reconnect** to apply.
@@ -59,7 +66,7 @@ Use the URL field at the top of the page. Enter a full address such as `ws://127
 ## Troubleshooting
 
 **Yomitan doesn't pop up on the text.**
-Click **Test line**. If Yomitan doesn't work on the test line either, it isn't running on the page. Check the file URL permission above, or serve the page over HTTP. If the test line works but game text doesn't, the hook is probably producing garbled text (an encoding issue) or splitting characters apart, so try a different hook in Textractor.
+Click **Test line**. If Yomitan doesn't work on the test line either, it isn't running on the page. Use the hosted copy, serve the page over HTTP, or enable the file URL permission described above. If the test line works but game text doesn't, the hook is probably producing garbled text (an encoding issue) or splitting characters apart, so try a different hook in Textractor.
 
 **The status stays on "Retrying".**
 Make sure the WebSocket extension is loaded in Textractor and that the host and port match. You can test the server independently with [websocat](https://github.com/vi/websocat):
