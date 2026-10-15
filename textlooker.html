@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Texthooker</title>
+<title>TextLooker</title>
 <style>
   :root {
     --bg: #f7f6f2; --fg: #1d1d1b; --muted: #77756e; --line: #dedbd2;
@@ -65,6 +65,7 @@
   <input type="text" id="url" value="ws://127.0.0.1:6677" spellcheck="false" aria-label="WebSocket URL">
   <button id="reconnect">Reconnect</button>
   <button id="clear">Clear</button>
+  <button id="test">Test line</button>
   <label class="chk"><input type="checkbox" id="dedupe" checked> Skip repeats</label>
   <button id="smaller" aria-label="Smaller text">A−</button>
   <button id="bigger" aria-label="Larger text">A+</button>
@@ -105,7 +106,10 @@
   }
 
   function addLine(text) {
-    text = text.replace(/\r/g, "").trim();
+    // drop control chars and zero-width/BOM characters that can break scanning
+    text = text.normalize("NFC")
+      .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F\u200B-\u200F\u2060\uFEFF\uFFFC]/g, "")
+      .trim();
     if (!text) return;
     if ($("dedupe").checked && text === lastText) return;
     lastText = text;
@@ -167,6 +171,11 @@
 
   $("reconnect").onclick = function () { delay = 1000; connect(); };
   $("clear").onclick = function () { log.textContent = ""; lastText = ""; };
+  $("test").onclick = function () {
+    var prev = $("dedupe").checked; $("dedupe").checked = false;
+    addLine("吾輩は猫である。名前はまだ無い。");
+    $("dedupe").checked = prev;
+  };
   $("bigger").onclick = function () { size = Math.min(size + 2, 96); store("th.size", size); applySize(); };
   $("smaller").onclick = function () { size = Math.max(size - 2, 12); store("th.size", size); applySize(); };
   $("dedupe").onchange = function () { store("th.dedupe", this.checked ? "1" : "0"); };
