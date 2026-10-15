@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Texthooker</title>
+<style>
+  :root {
+    --bg: #f7f6f2; --fg: #1d1d1b; --muted: #77756e; --line: #dedbd2;
+    --panel: #efede6; --ok: #2f8f4e; --warn: #c28a1c; --bad: #b5483a;
+    --size: 28px;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #17181a; --fg: #e8e6df; --muted: #8b8a84; --line: #2a2c2f;
+      --panel: #1f2123; --ok: #5fc27f; --warn: #e0b04a; --bad: #e07a6a;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #17181a; --fg: #e8e6df; --muted: #8b8a84; --line: #2a2c2f;
+    --panel: #1f2123; --ok: #5fc27f; --warn: #e0b04a; --bad: #e07a6a;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body {
+    background: var(--bg); color: var(--fg);
+    font-family: "Noto Serif JP", "Hiragino Mincho ProN", "Yu Mincho", "Noto Serif CJK JP", serif;
+    display: flex; flex-direction: column;
+  }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px;
+    padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+    font: 14px/1.2 system-ui, sans-serif; color: var(--muted);
+  }
+  #dot { width: 10px; height: 10px; border-radius: 50%; background: var(--bad); flex: none; }
+  #dot.ok { background: var(--ok); } #dot.wait { background: var(--warn); }
+  #status { min-width: 9em; color: var(--fg); }
+  input[type=text] {
+    flex: 1 1 220px; min-width: 0; padding: 6px 8px; font: inherit; color: var(--fg);
+    background: var(--bg); border: 1px solid var(--line); border-radius: 4px;
+  }
+  button, label.chk {
+    font: inherit; color: var(--fg); background: var(--bg); border: 1px solid var(--line);
+    border-radius: 4px; padding: 6px 10px; cursor: pointer;
+  }
+  button:hover { border-color: var(--muted); }
+  button:focus-visible, input:focus-visible { outline: 2px solid var(--ok); outline-offset: 1px; }
+  label.chk { display: inline-flex; gap: 6px; align-items: center; }
+  main { flex: 1; overflow-y: auto; padding: 24px 6vw 40vh; }
+  .line {
+    font-size: var(--size); line-height: 1.7; max-width: 40em;
+    padding: 6px 0; border-bottom: 1px solid var(--line);
+    white-space: pre-wrap; overflow-wrap: anywhere; user-select: text;
+  }
+  .line:last-child { border-bottom: 0; }
+  #empty { color: var(--muted); font: 16px/1.6 system-ui, sans-serif; max-width: 34em; }
+</style>
+</head>
+<body>
+<header>
+  <span id="dot"></span><span id="status">Disconnected</span>
+  <input type="text" id="url" value="ws://127.0.0.1:6677" spellcheck="false" aria-label="WebSocket URL">
+  <button id="reconnect">Reconnect</button>
+  <button id="clear">Clear</button>
+  <label class="chk"><input type="checkbox" id="dedupe" checked> Skip repeats</label>
+  <button id="smaller" aria-label="Smaller text">A−</button>
+  <button id="bigger" aria-label="Larger text">A+</button>
+  <button id="theme">Theme</button>
+</header>
+<main id="log" aria-live="polite">
+  <p id="empty">Waiting for text. In Textractor, select the hook that shows the game text, then advance the game.</p>
+</main>
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var log = $("log"), dot = $("dot"), statusEl = $("status"), urlEl = $("url");
+  var MAX_LINES = 500;
+  var ws = null, timer = null, delay = 1000, lastText = "", generation = 0;
+
+  function store(key, val) { try { localStorage.setItem(key, val); } catch (e) {} }
+  function load(key) { try { return localStorage.getItem(key); } catch (e) { return null; } }
+
+  // Restore settings
+  var savedUrl = load("th.url"); if (savedUrl) urlEl.value = savedUrl;
+  var size = parseInt(load("th.size"), 10) || 28;
+  var dd = load("th.dedupe"); if (dd !== null) $("dedupe").checked = dd === "1";
+  var theme = load("th.theme"); if (theme) document.documentElement.setAttribute("data-theme", theme);
+  function applySize() { document.documentElement.style.setProperty("--size", size + "px"); }
+  applySize();
+
+  function setStatus(kind, text) {
+    dot.className = kind === "ok" ? "ok" : kind === "wait" ? "wait" : "";
+    statusEl.textContent = text;
+  }
+
+  function normalizeUrl(raw) {
+    var u = raw.trim();
+    if (!u) u = "ws://127.0.0.1:6677";
+    if (!/^wss?:\/\//i.test(u)) u = "ws://" + u;
+    // "localhost" can resolve to ::1 first, which the extension may not listen on
+    return u.replace(/^(wss?:\/\/)localhost\b/i, "$1127.0.0.1");
+  }
+
+  function addLine(text) {
+    text = text.replace(/\r/g, "").trim();
+    if (!text) return;
+    if ($("dedupe").checked && text === lastText) return;
+    lastText = text;
+    var empty = $("empty"); if (empty) empty.remove();
+    var nearBottom = log.scrollHeight - log.scrollTop - log.clientHeight < 120;
+    var div = document.createElement("div");
+    div.className = "line";
+    div.textContent = text;           // plain text node: Yomitan can scan it
+    log.appendChild(div);
+    while (log.children.length > MAX_LINES) log.removeChild(log.firstChild);
+    if (nearBottom) log.scrollTop = log.scrollHeight;
+  }
+
+  function handleMessage(data) {
+    if (typeof data === "string") return addLine(data);
+    if (data && typeof data.text === "function") {          // Blob
+      data.text().then(addLine).catch(function () {});
+    } else if (data instanceof ArrayBuffer) {
+      addLine(new TextDecoder("utf-8").decode(data));
+    }
+  }
+
+  function scheduleRetry(gen) {
+    if (gen !== generation) return;
+    clearTimeout(timer);
+    setStatus("wait", "Retrying in " + Math.round(delay / 1000) + "s");
+    timer = setTimeout(connect, delay);
+    delay = Math.min(delay * 2, 10000);
+  }
+
+  function connect() {
+    clearTimeout(timer);
+    var gen = ++generation;                // invalidates handlers of older sockets
+    if (ws) { try { ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null; ws.close(); } catch (e) {} ws = null; }
+    var url = normalizeUrl(urlEl.value);
+    urlEl.value = url; store("th.url", url);
+    setStatus("wait", "Connecting…");
+    try {
+      ws = new WebSocket(url);
+    } catch (e) {
+      setStatus("", "Invalid URL");
+      return;                              // bad URL: don't loop
+    }
+    ws.onopen = function () {
+      if (gen !== generation) return;
+      delay = 1000; setStatus("ok", "Connected");
+    };
+    ws.onmessage = function (ev) {
+      if (gen !== generation) return;
+      handleMessage(ev.data);
+    };
+    ws.onerror = function () { /* onclose always follows; handled there */ };
+    ws.onclose = function () {
+      if (gen !== generation) return;
+      ws = null; setStatus("", "Disconnected");
+      scheduleRetry(gen);
+    };
+  }
+
+  $("reconnect").onclick = function () { delay = 1000; connect(); };
+  $("clear").onclick = function () { log.textContent = ""; lastText = ""; };
+  $("bigger").onclick = function () { size = Math.min(size + 2, 96); store("th.size", size); applySize(); };
+  $("smaller").onclick = function () { size = Math.max(size - 2, 12); store("th.size", size); applySize(); };
+  $("dedupe").onchange = function () { store("th.dedupe", this.checked ? "1" : "0"); };
+  $("theme").onclick = function () {
+    var root = document.documentElement, cur = root.getAttribute("data-theme");
+    var dark = cur ? cur === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+    var next = dark ? "light" : "dark";
+    root.setAttribute("data-theme", next); store("th.theme", next);
+  };
+  urlEl.addEventListener("keydown", function (e) { if (e.key === "Enter") { delay = 1000; connect(); } });
+
+  connect();
+})();
+</script>
+</body>
+</html>
